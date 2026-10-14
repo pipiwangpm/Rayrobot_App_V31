@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>连接与部署 · 镋钯机器人</title>
+  <script src="assets/mode-v30.js"></script>
+  <link rel="stylesheet" href="assets/device-flow.css">
+  <link rel="stylesheet" href="assets/phone-frame-v18.css">
+  <style>
+    .connection-status{display:flex;align-items:flex-start;gap:13px;padding:17px;border:1px solid #3a584c;border-radius:15px;background:#1d302a}
+    .connection-status.local{border-color:#66503d;background:#302820}
+    .connection-symbol{width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:10px;background:#294b3c;color:#64dcaa}
+    .connection-status.local .connection-symbol{background:#4d3828;color:#ffae77}
+    .connection-copy{flex:1;min-width:0}.connection-copy strong{display:block;font-size:15px}.connection-copy p{margin:5px 0 0;color:#afc1bb;font-size:11px;line-height:1.5}
+    .connection-pill{flex:none;border-radius:6px;padding:5px 7px;background:#285140;color:#66e2af;font-size:10px;font-weight:700}
+    .connection-status.local .connection-pill{background:#533b2b;color:#ffc18d}
+    .connection-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .connection-choice{min-height:91px;padding:13px;border:1px solid #3c4a50;border-radius:12px;background:#1d272b;color:#e8edef;text-align:left}
+    .connection-choice.selected{border-color:#ff7950;background:#302923}.connection-choice svg{color:#ff8b66}
+    .connection-choice strong,.connection-choice small{display:block}.connection-choice strong{margin-top:7px;font-size:13px}.connection-choice small{margin-top:3px;color:#a1afb5;font-size:10px;line-height:1.4}
+    .connection-caption{margin:11px 0 0;color:#89989f;font-size:11px;line-height:1.55}
+    .connection-panel-action{padding:13px 16px;border-top:1px solid #303b40;color:#ff9b78;background:none;border-inline:0;border-bottom:0;width:100%;text-align:left;font-size:12px}
+    .connection-result{min-height:36px;margin:11px 0 0;color:#a9b9bf;font-size:11px;line-height:1.55}
+    .connection-result:empty{display:none}
+    .connection-result strong{color:#72dda9}
+    .connection-actions{display:flex;gap:10px}.connection-actions>*{flex:1}
+    .connection-link{display:flex;align-items:center;gap:11px;padding:15px 16px;color:#ecf1f2;border-bottom:1px solid #303b40}
+    .connection-link:last-child{border-bottom:0}.connection-link svg{color:#ff8a61}.connection-link span{flex:1}.connection-link b{color:#96a7ae;font-size:19px;font-weight:400}
+  </style>
+</head>
+<body>
+  <script src="assets/device-flow.js"></script>
+  <script>
+    const {device:d,href,icon,esc,shell,section,row,toast,confirmAction,$}=Fleet;
+    const scoped=new URLSearchParams(location.search).has('id');
+    const mode=RobotMode.current;
+    const cloud=mode==='cloud';
+    const home=RobotMode.link('home.html');
+    const profile=RobotMode.link('profile.html');
+    const back=scoped?RobotMode.link(href('device')):profile;
+    const cloudStatus=`<div class="connection-status">
+      <div class="connection-symbol">${icon('wifi')}</div>
+      <div class="connection-copy"><strong>当前形态 · 云模式</strong><p>平台托管 · 多端同步</p></div>
+      <span class="connection-pill" id="cloudState">已连接</span>
+    </div>`;
+    const localStatus=`<div class="connection-status local">
+      <div class="connection-symbol">${icon('link')}</div>
+      <div class="connection-copy"><strong>当前形态 · 本地模式</strong><p>机器人本地凭证 · 操作留痕保存在本机</p></div>
+      <span class="connection-pill">内网</span>
+    </div>`;
+    const choices=`<div class="connection-grid">
+      <button class="connection-choice ${cloud?'selected':''}" data-switch="cloud" aria-pressed="${cloud}">${icon('wifi')}<strong>云端连接</strong><small>平台托管 · 多端同步</small></button>
+      <button class="connection-choice ${cloud?'':'selected'}" data-switch="local" aria-pressed="${!cloud}">${icon('link')}<strong>本地模式</strong><small>同网段 · 局域网直连</small></button>
+    </div><p class="connection-caption">部署形态由用户手动切换。本地模式使用设备缓存任务与素材，智能体和云端任务不可用。</p>`;
+    const cloudDetails=`${section('云端连接状态',`<div class="panel">
+      ${row('服务地址','api.robops.internal')}
+      ${row('连接协议','HTTPS · 443')}
+      ${row('服务状态','已连接 · 演示')}
+      ${row('延迟','43 ms · 演示')}
+      <div class="info-row"><span>最近检查</span><strong id="lastCheck">12:04:33 · 演示</strong></div>
+      ${scoped?row('当前机器人',d.name):row('管理范围','全部机器人')}
+    </div>`)}
+    ${section('云端服务器地址',`<div class="panel">
+      ${row('服务器','api.robops.internal')}
+      ${row('传输','HTTPS 443')}
+      <button class="connection-panel-action" id="requestChange">修改地址</button>
+    </div><p class="connection-caption">地址由租户管理员维护，App 内仅展示。</p>`)}
+    ${section('连接操作',`<div class="connection-actions">
+      <button class="button primary" id="reconnect">重新连接</button>
+      <button class="button secondary" id="testConnection">测试连接</button>
+    </div><p class="connection-result" id="connectionResult" role="status" aria-live="polite"></p>
+    <p class="connection-caption">弱网或断连时自动重试，超过阈值提示切换。本页为原型演示，不发起真实网络请求。</p>`)}`;
+    const localDetails=`${section('本地连接状态',`<div class="panel">
+      ${row('接入方式','同一局域网段 · mDNS 发现')}
+      ${row('可达节点','A03 · K12 · U2（演示）')}
+      ${row('云端服务','本地模式下不可用')}
+    </div>`)}
+    ${section('本地通道与入口',`<div class="panel">
+      <a class="connection-link" href="${RobotMode.link(scoped?href('lan-direct'):'lan-direct.html')}">${icon('link')}<span>局域网直连</span><b>›</b></a>
+      <a class="connection-link" href="${home}">${icon('grid')}<span>本地机器人列表</span><b>›</b></a>
+      <a class="connection-link" href="${RobotMode.link('task-center.html')}">${icon('task')}<span>本地任务 · 设备缓存</span><b>›</b></a>
+    </div>`)}`;
+    const content=`<div class="page-intro"><h1>连接与部署</h1><p>查看当前连接形态，手动切换云端或本地模式。</p></div>
+      ${cloud?cloudStatus:localStatus}
+      ${section('部署形态',choices)}
+      ${cloud?cloudDetails:localDetails}
+      <div class="button-row"><a class="button secondary" href="${back}">${scoped?'返回机器人详情':'返回我的'}</a></div>`;
+    shell('连接与部署',content,'<span class="head-spacer" aria-hidden="true"></span>',back);
+    function switchMode(next){
+      if(next===mode){toast(next==='cloud'?'已在云端模式':'已在本地模式');return}
+      const apply=()=>{
+        localStorage.setItem('robops.mode',next);
+        localStorage.setItem('fleet-network-mode',next);
+        const url=new URL(location.href);url.searchParams.set('m',next);
+        location.replace(url.href);
+      };
+      if(next==='local')confirmAction('切换到本地模式？','智能体、云端任务与云推送将不可用；改为使用设备本地缓存内容。',apply);
+      else apply();
+    }
+    document.querySelectorAll('[data-switch]').forEach(button=>button.onclick=()=>switchMode(button.dataset.switch));
+    if(cloud){
+      $('requestChange').onclick=()=>toast('修改云端地址请联系租户管理员');
+      let working=false;
+      function simulate(kind){
+        if(working)return;
+        working=true;
+        $('reconnect').disabled=$('testConnection').disabled=true;
+        $('cloudState').textContent=kind==='reconnect'?'连接中':'检测中';
+        $('connectionResult').textContent=kind==='reconnect'?'正在重新连接云端服务…':'正在测试地址连通性与延迟…';
+        setTimeout(()=>{
+          $('cloudState').textContent='已连接';
+          $('lastCheck').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false})+' · 演示';
+          $('connectionResult').innerHTML=kind==='reconnect'?'<strong>已重新连接</strong> · api.robops.internal · 延迟 32 ms（演示）':'<strong>连接正常</strong> · 延迟 32 ms · 心跳正常（演示）';
+          $('reconnect').disabled=$('testConnection').disabled=false;
+          working=false;
+        },900);
+      }
+      $('reconnect').onclick=()=>simulate('reconnect');
+      $('testConnection').onclick=()=>simulate('test');
+    }
+  </script>
+</body>
+</html>
